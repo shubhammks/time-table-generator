@@ -10,17 +10,44 @@ DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 DEFAULT_PERIODS = 8
 
 
-@router.get("/list", response_model=List[schemas.TimetableOut])
+@router.get("/list")
 def list_timetables(db: Session = Depends(get_db)):
-    return db.query(models.Timetable).all()
+    items = db.query(models.Timetable).all()
+    # enrich with is_published, created_at iso, and class name
+    class_ids = {i.class_id for i in items}
+    classes = {c.id: c for c in db.query(models.ClassGroup).filter(models.ClassGroup.id.in_(class_ids)).all()} if class_ids else {}
+    out = []
+    for i in items:
+        cls = classes.get(i.class_id)
+        out.append({
+            "id": i.id,
+            "name": i.name,
+            "class_id": i.class_id,
+            "class_name": cls.name if cls else None,
+            "department_id": i.department_id,
+            "mode": i.mode.value if hasattr(i.mode, 'value') else str(i.mode),
+            "is_published": bool(i.published),
+            "created_at": i.created_at.isoformat() if getattr(i, 'created_at', None) else None,
+        })
+    return out
 
 
-@router.get("/{tt_id}", response_model=schemas.TimetableOut)
+@router.get("/{tt_id}")
 def get_timetable(tt_id: int, db: Session = Depends(get_db)):
     tt = db.query(models.Timetable).get(tt_id)
     if not tt:
         raise HTTPException(status_code=404, detail="Not found")
-    return tt
+    cls = db.query(models.ClassGroup).get(tt.class_id) if tt.class_id else None
+    return {
+        "id": tt.id,
+        "name": tt.name,
+        "class_id": tt.class_id,
+        "class_name": cls.name if cls else None,
+        "department_id": tt.department_id,
+        "mode": tt.mode.value if hasattr(tt.mode, 'value') else str(tt.mode),
+        "is_published": bool(tt.published),
+        "created_at": tt.created_at.isoformat() if getattr(tt, 'created_at', None) else None,
+    }
 
 
 @router.delete("/{tt_id}")
