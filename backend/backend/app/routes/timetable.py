@@ -97,7 +97,8 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
     periods_idx = list(range(periods_per_day))
 
     # Requirement: subject hours per division (flatten per session)
-    required = []  # list of (division_id, subject_id, teacher_id, is_lab)
+    # required: (division_id, subject_id, teacher_id, subject_type)
+    required = []
     assign_map = { (a.division_id, a.subject_id): a.teacher_id for a in assignments }
     # fallback: if a division has no teacher for a subject, reuse any teacher assigned to that subject in another division
     fallback_teacher_for_subject = {}
@@ -114,14 +115,14 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
             if slots <= 0:
                 continue
             if s.type == models.SubjectType.lab:
-                # Each session occupies 2 periods; interpret hours_per_week as number of periods, approximate sessions
+                # Each lab session occupies 2 periods; interpret hours_per_week as number of periods, approximate sessions
                 session_len = max(1, int((cfg.lab_minutes or 120) / max(1, (cfg.lecture_minutes or 60))))
                 sessions = max(1, slots // session_len)
                 for _ in range(sessions):
-                    required.append((d.id, s.id, t_id, True))
+                    required.append((d.id, s.id, t_id, models.SubjectType.lab))
             else:
                 for _ in range(slots):
-                    required.append((d.id, s.id, t_id, False))
+                    required.append((d.id, s.id, t_id, s.type))
 
     teacher_busy = {(day, p): set() for day in days_idx for p in periods_idx}
     room_busy = {(day, p): set() for day in days_idx for p in periods_idx}
@@ -139,9 +140,10 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
                 cls.fixed_room_id = fixed_room_id
                 db.commit()
 
-    def can_place(day, period, division_id, teacher_id, is_lab, subject_id=None):
+    def can_place(day, period, division_id, teacher_id, subject_type, subject_id=None):
         if teacher_id in teacher_busy[(day, period)]:
             return False
+        # room collision for fixed room
         if fixed_room_id and fixed_room_id in room_busy[(day, period)]:
             return False
         if cfg.short_break_after_period is not None and period == cfg.short_break_after_period:
@@ -159,35 +161,45 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
     # Preload rooms for allocation when no fixed room
     all_rooms = db.query(models.Room).all()
 
-    def pick_room(day, period, is_lab):
-        # prefer matching type
-        desired_type = models.RoomType.lab if is_lab else models.RoomType.classroom
+    def pick_room(day, period, subject_type):
+        # prefer matching type and allowed room numbers
+        if subject_type == models.SubjectType.lab:
+            desired_type = models.RoomType.lab
+            allowed_numbers = {"103", "104"}
+        elif subject_type == models.SubjectType.tutorial:
+            desired_type = models.RoomType.tutorial
+            allowed_numbers = {"105"}
+        else:
+            desired_type = models.RoomType.classroom
+            allowed_numbers = {"101", "102"}
+
+        # pass 1: strict match type + allowed numbers
         for r in all_rooms:
-            if r.type != desired_type:
-                continue
-            if r.id in room_busy[(day, period)]:
-                continue
-            return r.id
-        # fallback any free room
-        for r in all_rooms:
-            if r.id not in room_busy[(day, period)]:
+            if r.type == desired_type and str(r.room_number) in allowed_numbers and r.id not in room_busy[(day, period)]:
                 return r.id
+        # pass 2: match by type only
+        for r in all_rooms:
+            if r.type == desired_type and r.id not in room_busy[(day, period)]:
+                return r.id
+        # no room available
         return None
 
     def backtrack(idx=0):
         if idx >= len(required):
             return True
-        division_id, subject_id, teacher_id, is_lab = required[idx]
+        division_id, subject_id, teacher_id, subject_type = required[idx]
         starts = [(d, p) for d in days_idx for p in periods_idx]
         for day, period in starts:
+            is_lab = subject_type == models.SubjectType.lab
+            # labs need two consecutive periods
             if is_lab and period + 1 >= periods_per_day:
                 continue
-            ok = can_place(day, period, division_id, teacher_id, is_lab, subject_id)
+            ok = can_place(day, period, division_id, teacher_id, subject_type, subject_id)
             if is_lab:
-                ok = ok and can_place(day, period + 1, division_id, teacher_id, is_lab, subject_id)
+                ok = ok and can_place(day, period + 1, division_id, teacher_id, subject_type, subject_id)
             if not ok:
                 continue
-            room_id = fixed_room_id if fixed_room_id else pick_room(day, period, is_lab)
+            room_id = fixed_room_id if fixed_room_id and subject_type == models.SubjectType.lecture else pick_room(day, period, subject_type)
             if room_id is None:
                 continue
             # mark busy
