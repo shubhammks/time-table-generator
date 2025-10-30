@@ -5,7 +5,7 @@ echo ==========================================
 echo.
 
 REM Check if we're in the right directory
-if not exist "backend\backend\app\main.py" (
+if not exist "backend\\app\\main.py" (
     echo ERROR: Please run this script from the 'tt' directory
     echo Current directory: %cd%
     pause
@@ -13,7 +13,7 @@ if not exist "backend\backend\app\main.py" (
 )
 
 echo Starting Backend Server...
-start "Timetable Backend" cmd /k "cd backend && python -m pip install -r backend\requirements.txt >nul 2>&1 && python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload"
+start "Timetable Backend" cmd /k "cd backend && python -m pip install -r backend\backend\requirements.txt >nul 2>&1 && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
 
 timeout /t 3 >nul
 
