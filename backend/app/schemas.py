@@ -206,6 +206,16 @@ class GridOut(BaseModel):
     grid: dict
 
 
+class SlotEditIn(BaseModel):
+    day_index: int
+    period_index: int
+    division_id: Optional[int] = None
+    subject_id: Optional[int] = None  # if null => clear
+    teacher_id: Optional[int] = None
+    room_id: Optional[int] = None  # optional; if null server may pick
+    span: int = 1  # 1 for lecture/tutorial, 2 for lab
+
+
 class BatchIn(BaseModel):
     division_id: int
     number: int

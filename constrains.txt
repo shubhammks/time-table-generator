@@ -1,0 +1,95 @@
+1. Login and Selection
+
+The timetable coordinator logs in to the system.
+
+After login, the coordinator selects one of two options: School or College.
+
+For SCHOOL:
+
+The user should enter the details of all teachers in the school so that teachers can be directly selected while allotting subjects.
+
+For generating the timetable for any class:
+
+The user should enter the subjects for that particular class.
+
+For each subject, the user should assign teachers from the teacher table entered previously.
+
+The user should enter the number of divisions for each class (for example, 10A, 10B), ensuring that subjects for each division of any class remain the same.
+
+When generating a timetable for any class, the system should generate timetables for all divisions of that class.
+
+Teachers for each subject for each division must be allotted separately by the user.
+
+The user should enter the number of periods of each lecture per week to maintain a proper distribution of lectures.
+
+The user should enter the number of periods per class because:
+
+For KG sections, school time and periods are fewer.
+
+For higher classes, they are greater.
+
+The system should also ask:
+
+When to allot short breaks and lunch breaks.
+
+The number of periods per day for each day from Monday to Saturday.
+
+If the user wants any lecture of a particular subject to be conducted twice in a day, the system should allow the user to select that subject or choose “none” as default.
+
+Ensure that there is a fixed classroom allotted to each standard, meaning the class remains in the same room throughout the day.
+
+The final output will be a timetable for each division of each class, ensuring all timetable constraints are satisfied.
+
+For COLLEGE:
+
+After selecting College, the user must enter the department name and assign it a primary key in the database.
+
+The user should enter room numbers for all classrooms, labs, and tutorial rooms available in the department.
+
+The user should enter teacher details in the department so that teachers can be directly selected while allotting lectures, labs, and tutorials.
+
+The user should then select the academic year (e.g., 1st Year, 2nd Year, or 3rd Year).
+
+Ensure that particular classrooms and labs are allotted to the entire department, meaning:
+
+Any division from that department can be allotted any lab or classroom.
+
+Try to allot lectures for each division on the same floor.
+
+If constraints occur, the division can be shifted to another floor.
+
+Example: D301 means D-building, 3rd floor, classroom number 1.
+
+Ensure that there are no unnecessary gaps between lectures for both teachers and students.
+
+After selecting the year, the user should:
+
+Enter course subjects, lab subjects, and tutorial subjects.
+
+Enter the number of divisions for that year.
+
+The user should then assign teachers to each lecture, lab, and tutorial for every division by selecting from the teacher database.
+
+Ensure that each subject has only one lab per day, and the duration of each lab is two consecutive lecture slots (e.g., two hours if one lecture = one hour).
+
+The total college time may not be perfectly consistent, but should be balanced, allowing up to 1–2 hours difference between divisions.
+
+Ensure that students’ time is utilized effectively and not wasted, giving them more time for self-study.
+
+For example, if there are two divisions — 10A and 10B — their teachers and subjects should be the same, and there must be no conflicts between them.
+
+Additional College Rules for Batch Handling
+
+If a class has three batches (for example, Division A → A1, A2, A3):
+
+If A1 is in the lab, then A2 and A3 should not remain free.
+
+The system must ensure that A2 and A3 have other subjects, labs, or tutorials scheduled during that time.
+
+In the timetable, batch name should be clearly mentioned — for example:
+
+TY A1 or FY B2 (Division + Batch).
+
+During lab or tutorial hours, the timetable should display the schedule of all three batches together under the same division, so it’s easy to see which batch has which activity.
+
+The system must generate a separate timetable for every division (e.g., Division A, Division B, etc.), clearly showing all batch allocations within each division’s timetable.

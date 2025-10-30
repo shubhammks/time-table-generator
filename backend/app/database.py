@@ -33,6 +33,10 @@ def init_db():
             cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info('subjects')").fetchall()]
             if "can_be_twice_in_day" not in cols:
                 conn.exec_driver_sql("ALTER TABLE subjects ADD COLUMN can_be_twice_in_day BOOLEAN DEFAULT 0")
+            # timetables.division_id
+            cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info('timetables')").fetchall()]
+            if "division_id" not in cols:
+                conn.exec_driver_sql("ALTER TABLE timetables ADD COLUMN division_id INTEGER")
             # batches table
             tables = [row[0] for row in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
             if "batches" not in tables:

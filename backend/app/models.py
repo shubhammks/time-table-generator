@@ -106,6 +106,7 @@ class Timetable(Base):
     name = Column(String(255), nullable=False)
     class_id = Column(Integer, ForeignKey("classes.id"), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    division_id = Column(Integer, ForeignKey("divisions.id"), nullable=True)  # explicit owner division for per-division timetables
     mode = Column(Enum(ModeType), nullable=False)
     published = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
