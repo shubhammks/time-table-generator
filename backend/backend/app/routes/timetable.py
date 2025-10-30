@@ -128,6 +128,10 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
     room_busy = {(day, p): set() for day in days_idx for p in periods_idx}
     subject_once_map = {}
     placed = []
+    # Track counts per (division, subject)
+    required_counts = {}
+    for (div_id, subj_id, _teacher, subj_type) in required:
+        required_counts[(div_id, subj_id)] = required_counts.get((div_id, subj_id), 0) + (1 if subj_type != models.SubjectType.lab else 1)
 
     fixed_room_id = None
     if payload.mode == models.ModeType.school:
@@ -255,7 +259,91 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
                 placed.pop()
         return False
 
-    backtrack(0)
+    solved = backtrack(0)
+
+    # If counts are short, try a relaxed fill (allow same subject twice per day if needed)
+    def place_relaxed(div_id, subj_id, teacher_id, subj_type):
+        for day in days_idx:
+            for period in periods_idx:
+                is_lab = subj_type == models.SubjectType.lab
+                if is_lab and period + 1 >= periods_per_day:
+                    continue
+                # relax subject_once rule
+                if teacher_id in teacher_busy[(day, period)]:
+                    continue
+                if is_lab and teacher_id in teacher_busy[(day, period + 1)]:
+                    continue
+                room_id = fixed_room_id if fixed_room_id and subj_type == models.SubjectType.lecture else pick_room(day, period, subj_type)
+                if room_id is None:
+                    continue
+                # mark busy
+                teacher_busy[(day, period)].add(teacher_id)
+                if is_lab:
+                    teacher_busy[(day, period + 1)].add(teacher_id)
+                room_busy[(day, period)].add(room_id)
+                if is_lab:
+                    room_busy[(day, period + 1)].add(room_id)
+                # persist
+                tt = tt_by_div[div_id]
+                e1 = models.TimetableEntry(
+                    timetable_id=tt.id,
+                    day_index=day,
+                    period_index=period,
+                    division_id=div_id,
+                    batch_number=None,
+                    subject_id=subj_id,
+                    teacher_id=teacher_id,
+                    room_id=room_id,
+                )
+                placed.append(e1)
+                if is_lab:
+                    e2 = models.TimetableEntry(
+                        timetable_id=tt.id,
+                        day_index=day,
+                        period_index=period + 1,
+                        division_id=div_id,
+                        batch_number=None,
+                        subject_id=subj_id,
+                        teacher_id=teacher_id,
+                        room_id=room_id,
+                    )
+                    placed.append(e2)
+                return True
+        return False
+
+    # compute placed counts
+    placed_counts = {}
+    for e in placed:
+        key = (e.division_id, e.subject_id)
+        placed_counts[key] = placed_counts.get(key, 0) + (1 if True else 1)
+        # Note: lab sessions created two entries; above counts both; adjust below
+    # Adjust lab double-counting: For simplicity, recompute from entries by pairing consecutive slots for same subj/div/day
+    # Build set of lab session keys to avoid overcount; treat each pair as one
+    lab_sessions = set()
+    for e in placed:
+        subj = subjects_by_id.get(e.subject_id)
+        if subj and subj.type == models.SubjectType.lab:
+            lab_key = (e.division_id, e.subject_id, e.day_index, e.period_index // 2)
+            lab_sessions.add(lab_key)
+    for key in list(placed_counts.keys()):
+        # overwrite with correct counts for labs
+        div_id, subj_id = key
+        subj = subjects_by_id.get(subj_id)
+        if subj and subj.type == models.SubjectType.lab:
+            # count how many unique lab sessions for this div+subj
+            cnt = sum(1 for (d, s, day, bucket) in lab_sessions if d == div_id and s == subj_id)
+            placed_counts[key] = cnt
+
+    # Fill deficits
+    for (div_id, subj_id), req in required_counts.items():
+        got = placed_counts.get((div_id, subj_id), 0)
+        if got < req:
+            teacher_id = assign_map.get((div_id, subj_id)) or fallback_teacher_for_subject.get(subj_id)
+            subj_type = subjects_by_id[subj_id].type if subjects_by_id.get(subj_id) else models.SubjectType.lecture
+            for _ in range(req - got):
+                placed_ok = place_relaxed(div_id, subj_id, teacher_id, subj_type)
+                if not placed_ok:
+                    break
 
     for e in placed:
         db.add(e)
