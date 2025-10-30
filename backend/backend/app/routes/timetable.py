@@ -98,6 +98,13 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
     fixed_room_id = None
     if payload.mode == models.ModeType.school:
         fixed_room_id = cls.fixed_room_id if cls else None
+        if cls and not fixed_room_id:
+            # auto-assign first classroom as fixed room for the class if not set
+            any_classroom = db.query(models.Room).filter(models.Room.type == models.RoomType.classroom).first()
+            if any_classroom:
+                fixed_room_id = any_classroom.id
+                cls.fixed_room_id = fixed_room_id
+                db.commit()
 
     def can_place(day, period, division_id, teacher_id, is_lab, subject_id=None):
         if teacher_id in teacher_busy[(day, period)]:
@@ -148,6 +155,8 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
             if not ok:
                 continue
             room_id = fixed_room_id if fixed_room_id else pick_room(day, period, is_lab)
+            if room_id is None:
+                continue
             # mark busy
             teacher_busy[(day, period)].add(teacher_id)
             if is_lab:
@@ -237,7 +246,7 @@ def get_grid(tt_id: int, db: Session = Depends(get_db)):
         grid[day][str(e.period_index)] = {
             "subject": {"id": e.subject_id, "name": subj.name if subj else None},
             "teacher": {"id": e.teacher_id, "name": teach.name if teach else None},
-            "room": ({"id": e.room_id, "room_number": room.room_number, "floor": room.floor, "type": room.type.value} if room else None),
+            "room": ({"id": e.room_id, "room_number": room.room_number, "floor": room.floor, "type": room.type.value} if room else {"id": None, "room_number": "TBD"}),
             "division": {"id": e.division_id, "name": div.name if div else None},
             "batch": {"number": e.batch_number} if e.batch_number else None,
         }
