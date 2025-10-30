@@ -192,7 +192,7 @@ const Teachers = () => {
                         {teacher.email}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {teacher.department?.name || 'N/A'}
+{departments?.find(d => d.id === teacher.department_id)?.name || 'N/A'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {teacher.subjects?.length || 0} subjects
