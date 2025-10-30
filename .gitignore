@@ -152,5 +152,3 @@ build/
 *.db
 *.sqlite
 
-# Ignore nested frontend repo in root to avoid embedded repo issues
-/frontend/
