@@ -99,10 +99,16 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
     # Requirement: subject hours per division (flatten per session)
     required = []  # list of (division_id, subject_id, teacher_id, is_lab)
     assign_map = { (a.division_id, a.subject_id): a.teacher_id for a in assignments }
+    # fallback: if a division has no teacher for a subject, reuse any teacher assigned to that subject in another division
+    fallback_teacher_for_subject = {}
+    for a in assignments:
+        fallback_teacher_for_subject.setdefault(a.subject_id, a.teacher_id)
+
     for s in subjects:
         for d in divisions:
-            t_id = assign_map.get((d.id, s.id))
+            t_id = assign_map.get((d.id, s.id)) or fallback_teacher_for_subject.get(s.id)
             if not t_id:
+                # no teacher for this subject at all; skip but continue others
                 continue
             slots = int(s.hours_per_week or 0)
             if slots <= 0:
@@ -273,7 +279,7 @@ def get_grid(tt_id: int, db: Session = Depends(get_db)):
         grid[day][str(e.period_index)] = {
             "subject": {"id": e.subject_id, "name": subj.name if subj else None},
             "teacher": {"id": e.teacher_id, "name": teach.name if teach else None},
-            "room": ({"id": e.room_id, "room_number": room.room_number, "floor": room.floor, "type": room.type.value} if room else {"id": None, "room_number": "TBD"}),
+            "room": ({"id": e.room_id, "room_number": room.room_number, "floor": room.floor, "type": room.type.value} if room else {"id": None, "room_number": "-"}),
             "division": {"id": e.division_id, "name": div.name if div else None},
             "batch": {"number": e.batch_number} if e.batch_number else None,
         }

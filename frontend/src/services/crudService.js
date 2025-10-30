@@ -229,10 +229,10 @@ export const timetableService = {
               period_index: parseInt(period),
               day: day,
               period: period,
-              subject_name: entry.subject?.name || 'N/A',
-              teacher_name: entry.teacher?.name || 'N/A',
-              room_number: entry.room?.room_number || 'N/A',
-              division_name: entry.division?.name || 'N/A',
+              subject_name: entry.subject?.name || 'Free',
+              teacher_name: entry.teacher?.name || '-',
+              room_number: entry.room?.room_number || '-',
+              division_name: entry.division?.name || '-',
               batch_number: entry.batch?.number || null,
               ...entry
             });
