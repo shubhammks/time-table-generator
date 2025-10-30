@@ -35,17 +35,6 @@ def delete_timetable(tt_id: int, db: Session = Depends(get_db)):
 
 @router.post("/generate")
 def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
-    # Create timetable header
-    tt = models.Timetable(
-        name=payload.name,
-        class_id=payload.class_id,
-        department_id=payload.department_id,
-        mode=payload.mode,
-    )
-    db.add(tt)
-    db.commit()
-    db.refresh(tt)
-
     # Load context
     divisions = db.query(models.Division).filter(models.Division.class_id == payload.class_id).order_by(models.Division.index).all()
     subjects = db.query(models.Subject).filter(models.Subject.class_id == payload.class_id).all()
@@ -60,19 +49,28 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
     working_days = min(max(cfg.working_days or 6, 5), 6)
     periods_per_day = cfg.periods_per_day or 8
 
-    # Build hard constraint CSP
+    # Create one timetable per division
+    cls = db.query(models.ClassGroup).get(payload.class_id)
+    tt_by_div = {}
+    for d in divisions:
+        tt = models.Timetable(
+            name=f"{payload.name} - {d.name}",
+            class_id=payload.class_id,
+            department_id=payload.department_id,
+            mode=payload.mode,
+        )
+        db.add(tt)
+        db.flush()  # get id without full commit
+        tt_by_div[d.id] = tt
+    db.commit()
+
+    # Build hard constraint CSP (global across divisions to avoid teacher conflicts)
     days_idx = list(range(working_days))
     periods_idx = list(range(periods_per_day))
 
     # Requirement: subject hours per division
     required = []  # list of (division_id, subject_id, teacher_id, slots_needed, is_lab)
-    by_div = {}
-    for d in divisions:
-        by_div[d.id] = {}
-    # Map per-division teacher assignment
-    assign_map = {}
-    for a in assignments:
-        assign_map[(a.division_id, a.subject_id)] = a.teacher_id
+    assign_map = { (a.division_id, a.subject_id): a.teacher_id for a in assignments }
     for s in subjects:
         for d in divisions:
             t_id = assign_map.get((d.id, s.id))
@@ -80,54 +78,40 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
                 continue
             slots = s.hours_per_week
             if slots and s.type == models.SubjectType.lab:
-                # labs consume 2 consecutive periods per session
-                # represent as lab sessions count
                 sessions = max(1, slots // max(1, (cfg.lab_minutes or 120) // (cfg.lecture_minutes or 60)))
                 required.append((d.id, s.id, t_id, sessions, True))
             else:
                 required.append((d.id, s.id, t_id, slots, False))
 
-    # State trackers
     teacher_busy = {(day, p): set() for day in days_idx for p in periods_idx}
     room_busy = {(day, p): set() for day in days_idx for p in periods_idx}
-    subject_once_map = {}  # key: (division_id, subject_id, day) -> count
-    placed = []  # list of TimetableEntry to persist
+    subject_once_map = {}
+    placed = []
 
-    # Helper: choose room (fixed for school per class, free any for college)
     fixed_room_id = None
     if payload.mode == models.ModeType.school:
-        cls = db.query(models.ClassGroup).get(payload.class_id)
         fixed_room_id = cls.fixed_room_id if cls else None
 
-    # Constraints helpers
     def can_place(day, period, division_id, teacher_id, is_lab, subject_id=None):
         if teacher_id in teacher_busy[(day, period)]:
             return False
-        # room collision for fixed room
         if fixed_room_id and fixed_room_id in room_busy[(day, period)]:
             return False
-        # lunch/short break enforcement
         if cfg.short_break_after_period is not None and period == cfg.short_break_after_period:
             return False
         if cfg.lunch_break_after_period is not None and period in (cfg.lunch_break_after_period,):
             return False
-        # no duplicate subject twice in a day unless allowed
         if not cfg.allow_subject_twice_in_day and subject_id is not None:
             if subject_once_map.get((division_id, subject_id, day), 0) >= 1:
                 return False
         return True
 
-    # Simple placement: iterate requirements and assign greedily with backtracking
     def backtrack(idx=0):
         if idx >= len(required):
             return True
         division_id, subject_id, teacher_id, count, is_lab = required[idx]
-        # place 'count' sessions
-        sessions_placed = 0
         starts = [(d, p) for d in days_idx for p in periods_idx]
-        # prefer earlier slots
         for day, period in starts:
-            # check lab occupies two consecutive periods
             if is_lab and period + 1 >= periods_per_day:
                 continue
             ok = can_place(day, period, division_id, teacher_id, is_lab, subject_id)
@@ -135,11 +119,7 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
                 ok = ok and can_place(day, period + 1, division_id, teacher_id, is_lab, subject_id)
             if not ok:
                 continue
-            # room selection
-            room_id = fixed_room_id
-            if room_id is None:
-                room_id = None  # any room; skipping actual allocation for now
-            # mark busy
+            room_id = fixed_room_id if fixed_room_id else None
             teacher_busy[(day, period)].add(teacher_id)
             if is_lab:
                 teacher_busy[(day, period + 1)].add(teacher_id)
@@ -147,9 +127,10 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
                 room_busy[(day, period)].add(fixed_room_id)
                 if is_lab:
                     room_busy[(day, period + 1)].add(fixed_room_id)
-            # mark subject placed once today
             subject_once_map[(division_id, subject_id, day)] = subject_once_map.get((division_id, subject_id, day), 0) + 1
-            # add entries
+
+            # persist into the division's timetable id
+            tt = tt_by_div[division_id]
             e1 = models.TimetableEntry(
                 timetable_id=tt.id,
                 day_index=day,
@@ -173,10 +154,8 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
                     room_id=room_id,
                 )
                 placed.append(e2)
-            sessions_placed = 1
-            if idx + 1 <= len(required):
-                if backtrack(idx + 1):
-                    return True
+            if backtrack(idx + 1):
+                return True
             # undo
             teacher_busy[(day, period)].discard(teacher_id)
             if is_lab:
@@ -185,7 +164,6 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
                 room_busy[(day, period)].discard(fixed_room_id)
                 if is_lab:
                     room_busy[(day, period + 1)].discard(fixed_room_id)
-            # unmark subject once
             prev = subject_once_map.get((division_id, subject_id, day), 0)
             if prev > 0:
                 subject_once_map[(division_id, subject_id, day)] = prev - 1
@@ -196,12 +174,11 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
 
     backtrack(0)
 
-    # persist entries
     for e in placed:
         db.add(e)
     db.commit()
 
-    return {"success": True, "id": tt.id, "message": "Generated with basic constraints", "entries": len(placed)}
+    return {"success": True, "ids": [tt.id for tt in tt_by_div.values()], "message": "Generated per-division", "entries": len(placed)}
 
 
 @router.get("/{tt_id}/grid", response_model=schemas.GridOut)
@@ -209,14 +186,30 @@ def get_grid(tt_id: int, db: Session = Depends(get_db)):
     # Build empty grid of DEFAULT_PERIODS per day
     grid = {day: {str(p): {} for p in range(DEFAULT_PERIODS)} for day in DAYS}
     entries = db.query(models.TimetableEntry).filter(models.TimetableEntry.timetable_id == tt_id).all()
-    # Map entries into grid
+
+    # Preload related entities for names
+    subject_ids = {e.subject_id for e in entries}
+    teacher_ids = {e.teacher_id for e in entries}
+    room_ids = {e.room_id for e in entries if e.room_id}
+    division_ids = {e.division_id for e in entries}
+
+    subjects = {s.id: s for s in db.query(models.Subject).filter(models.Subject.id.in_(subject_ids)).all()} if subject_ids else {}
+    teachers = {t.id: t for t in db.query(models.Teacher).filter(models.Teacher.id.in_(teacher_ids)).all()} if teacher_ids else {}
+    rooms = {r.id: r for r in db.query(models.Room).filter(models.Room.id.in_(room_ids)).all()} if room_ids else {}
+    divisions = {d.id: d for d in db.query(models.Division).filter(models.Division.id.in_(division_ids)).all()} if division_ids else {}
+
+    # Map entries into grid with names so UI doesn't show N/A
     for e in entries:
         day = DAYS[e.day_index]
+        subj = subjects.get(e.subject_id)
+        teach = teachers.get(e.teacher_id)
+        room = rooms.get(e.room_id) if e.room_id else None
+        div = divisions.get(e.division_id)
         grid[day][str(e.period_index)] = {
-            "subject": {"id": e.subject_id},
-            "teacher": {"id": e.teacher_id},
-            "room": {"id": e.room_id} if e.room_id else None,
-            "division": {"id": e.division_id},
+            "subject": {"id": e.subject_id, "name": subj.name if subj else None},
+            "teacher": {"id": e.teacher_id, "name": teach.name if teach else None},
+            "room": ({"id": e.room_id, "room_number": room.room_number, "floor": room.floor, "type": room.type.value} if room else None),
+            "division": {"id": e.division_id, "name": div.name if div else None},
             "batch": {"number": e.batch_number} if e.batch_number else None,
         }
     return {"days": DAYS, "grid": grid}
