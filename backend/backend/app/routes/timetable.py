@@ -38,6 +38,7 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
     # Load context
     divisions = db.query(models.Division).filter(models.Division.class_id == payload.class_id).order_by(models.Division.index).all()
     subjects = db.query(models.Subject).filter(models.Subject.class_id == payload.class_id).all()
+    subjects_by_id = {s.id: s for s in subjects}
     assignments = db.query(models.SubjectTeacher).filter(models.SubjectTeacher.division_id.in_([d.id for d in divisions])).all()
     # Time config priority: class -> department -> default
     cfg_q = db.query(models.TimeConfig).filter(models.TimeConfig.class_id == payload.class_id)
@@ -68,20 +69,26 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
     days_idx = list(range(working_days))
     periods_idx = list(range(periods_per_day))
 
-    # Requirement: subject hours per division
-    required = []  # list of (division_id, subject_id, teacher_id, slots_needed, is_lab)
+    # Requirement: subject hours per division (flatten per session)
+    required = []  # list of (division_id, subject_id, teacher_id, is_lab)
     assign_map = { (a.division_id, a.subject_id): a.teacher_id for a in assignments }
     for s in subjects:
         for d in divisions:
             t_id = assign_map.get((d.id, s.id))
             if not t_id:
                 continue
-            slots = s.hours_per_week
-            if slots and s.type == models.SubjectType.lab:
-                sessions = max(1, slots // max(1, (cfg.lab_minutes or 120) // (cfg.lecture_minutes or 60)))
-                required.append((d.id, s.id, t_id, sessions, True))
+            slots = int(s.hours_per_week or 0)
+            if slots <= 0:
+                continue
+            if s.type == models.SubjectType.lab:
+                # Each session occupies 2 periods; interpret hours_per_week as number of periods, approximate sessions
+                session_len = max(1, int((cfg.lab_minutes or 120) / max(1, (cfg.lecture_minutes or 60))))
+                sessions = max(1, slots // session_len)
+                for _ in range(sessions):
+                    required.append((d.id, s.id, t_id, True))
             else:
-                required.append((d.id, s.id, t_id, slots, False))
+                for _ in range(slots):
+                    required.append((d.id, s.id, t_id, False))
 
     teacher_busy = {(day, p): set() for day in days_idx for p in periods_idx}
     room_busy = {(day, p): set() for day in days_idx for p in periods_idx}
@@ -101,15 +108,36 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
             return False
         if cfg.lunch_break_after_period is not None and period in (cfg.lunch_break_after_period,):
             return False
-        if not cfg.allow_subject_twice_in_day and subject_id is not None:
-            if subject_once_map.get((division_id, subject_id, day), 0) >= 1:
+        # no duplicate subject twice in a day unless allowed globally or per subject flag
+        if subject_id is not None:
+            subj = subjects_by_id.get(subject_id)
+            allow_twice = bool(cfg.allow_subject_twice_in_day or (subj.can_be_twice_in_day if subj else False))
+            if not allow_twice and subject_once_map.get((division_id, subject_id, day), 0) >= 1:
                 return False
         return True
+
+    # Preload rooms for allocation when no fixed room
+    all_rooms = db.query(models.Room).all()
+
+    def pick_room(day, period, is_lab):
+        # prefer matching type
+        desired_type = models.RoomType.lab if is_lab else models.RoomType.classroom
+        for r in all_rooms:
+            if r.type != desired_type:
+                continue
+            if r.id in room_busy[(day, period)]:
+                continue
+            return r.id
+        # fallback any free room
+        for r in all_rooms:
+            if r.id not in room_busy[(day, period)]:
+                return r.id
+        return None
 
     def backtrack(idx=0):
         if idx >= len(required):
             return True
-        division_id, subject_id, teacher_id, count, is_lab = required[idx]
+        division_id, subject_id, teacher_id, is_lab = required[idx]
         starts = [(d, p) for d in days_idx for p in periods_idx]
         for day, period in starts:
             if is_lab and period + 1 >= periods_per_day:
@@ -119,14 +147,15 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
                 ok = ok and can_place(day, period + 1, division_id, teacher_id, is_lab, subject_id)
             if not ok:
                 continue
-            room_id = fixed_room_id if fixed_room_id else None
+            room_id = fixed_room_id if fixed_room_id else pick_room(day, period, is_lab)
+            # mark busy
             teacher_busy[(day, period)].add(teacher_id)
             if is_lab:
                 teacher_busy[(day, period + 1)].add(teacher_id)
-            if fixed_room_id:
-                room_busy[(day, period)].add(fixed_room_id)
+            if room_id:
+                room_busy[(day, period)].add(room_id)
                 if is_lab:
-                    room_busy[(day, period + 1)].add(fixed_room_id)
+                    room_busy[(day, period + 1)].add(room_id)
             subject_once_map[(division_id, subject_id, day)] = subject_once_map.get((division_id, subject_id, day), 0) + 1
 
             # persist into the division's timetable id
@@ -160,10 +189,10 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
             teacher_busy[(day, period)].discard(teacher_id)
             if is_lab:
                 teacher_busy[(day, period + 1)].discard(teacher_id)
-            if fixed_room_id:
-                room_busy[(day, period)].discard(fixed_room_id)
+            if room_id:
+                room_busy[(day, period)].discard(room_id)
                 if is_lab:
-                    room_busy[(day, period + 1)].discard(fixed_room_id)
+                    room_busy[(day, period + 1)].discard(room_id)
             prev = subject_once_map.get((division_id, subject_id, day), 0)
             if prev > 0:
                 subject_once_map[(division_id, subject_id, day)] = prev - 1
