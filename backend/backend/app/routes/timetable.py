@@ -162,7 +162,7 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
     all_rooms = db.query(models.Room).all()
 
     def pick_room(day, period, subject_type):
-        # prefer matching type and allowed room numbers
+        # prefer allowed room numbers (enforced by building policy), then fall back by type
         if subject_type == models.SubjectType.lab:
             desired_type = models.RoomType.lab
             allowed_numbers = {"103", "104"}
@@ -173,9 +173,9 @@ def generate(payload: schemas.TimetableIn, db: Session = Depends(get_db)):
             desired_type = models.RoomType.classroom
             allowed_numbers = {"101", "102"}
 
-        # pass 1: strict match type + allowed numbers
+        # pass 1: strict by number regardless of saved type
         for r in all_rooms:
-            if r.type == desired_type and str(r.room_number) in allowed_numbers and r.id not in room_busy[(day, period)]:
+            if str(r.room_number) in allowed_numbers and r.id not in room_busy[(day, period)]:
                 return r.id
         # pass 2: match by type only
         for r in all_rooms:
