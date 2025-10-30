@@ -1,0 +1,156 @@
+import random
+from pprint import pprint
+
+# === SAMPLE INPUT DATA ===
+data = {
+    'mode': 'College',
+    'department': 'AIDS',
+    'rooms': ['room1', 'room2', 'lab1', 'lab2', 'tutorial'],
+    'teachers': [
+        {'name': 'a', 'subjects': ['ML', 'CAD']},
+        {'name': 'b', 'subjects': ['DAA', 'SMISS']},
+        {'name': 'c', 'subjects': ['IP', 'SMISS']},
+        {'name': 'd', 'subjects': ['CAD', 'ML']},
+        {'name': 'e', 'subjects': ['DAA', 'IP']}
+    ],
+    'years': [
+        {
+            'year': 'FY',
+            'divisions': 2,
+            'subjects': [
+                {'name': 'ML', 'type': 'lecture', 'teacher': 'a'},
+                {'name': 'CAD', 'type': 'lecture', 'teacher': 'd'},
+                {'name': 'IP', 'type': 'lecture', 'teacher': 'c'},
+                {'name': 'SMISS', 'type': 'lecture', 'teacher': 'b'}
+            ]
+        },
+        {
+            'year': 'SY',
+            'divisions': 1,
+            'subjects': [
+                {'name': 'ML', 'type': 'lab', 'teacher': 'a'},
+                {'name': 'CAD', 'type': 'lab', 'teacher': 'd'}
+            ]
+        }
+    ]
+}
+
+# === SETTINGS ===
+DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+PERIODS_PER_DAY = 6
+
+# === HELPER FUNCTIONS ===
+def is_teacher_busy(timetable, teacher, day, period):
+    for yr in timetable:
+        for div in timetable[yr]:
+            slot = timetable[yr][div][day][period]
+            if slot and slot.get('teacher') == teacher:
+                return True
+    return False
+
+
+def initialize_timetable(data):
+    timetable = {}
+    for year_data in data['years']:
+        year = year_data['year']
+        timetable[year] = {}
+        for div in range(1, year_data['divisions'] + 1):
+            timetable[year][f"Div-{div}"] = {
+                day: [None for _ in range(PERIODS_PER_DAY)] for day in DAYS
+            }
+    return timetable
+
+
+def generate_timetable(data):
+    timetable = initialize_timetable(data)
+    all_rooms = data['rooms']
+
+    for year_data in data['years']:
+        year = year_data['year']
+
+        for div in range(1, year_data['divisions'] + 1):
+            division = f"Div-{div}"
+            subjects = year_data['subjects']
+
+            for day in DAYS:
+                used_subjects_today = set()
+
+                for period in range(PERIODS_PER_DAY):
+                    # filter subjects not used today
+                    available_subjects = [
+                        s for s in subjects if s['name'] not in used_subjects_today
+                    ]
+
+                    if not available_subjects:
+                        continue  # skip if no subjects left
+
+                    random.shuffle(available_subjects)
+                    assigned = False
+
+                    for subject in available_subjects:
+                        teacher = subject['teacher']
+                        subj_type = subject['type'].lower()
+                        room = random.choice(all_rooms)
+
+                        # check teacher availability
+                        if is_teacher_busy(timetable, teacher, day, period):
+                            continue
+
+                        # handle labs (2 periods)
+                        if subj_type == "lab":
+                            if period + 1 >= PERIODS_PER_DAY:
+                                continue
+                            if is_teacher_busy(timetable, teacher, day, period + 1):
+                                continue
+
+                            timetable[year][division][day][period] = {
+                                'subject': subject['name'],
+                                'teacher': teacher,
+                                'type': 'Lab',
+                                'room': room
+                            }
+                            timetable[year][division][day][period + 1] = {
+                                'subject': subject['name'],
+                                'teacher': teacher,
+                                'type': 'Lab (contd)',
+                                'room': room
+                            }
+                            used_subjects_today.add(subject['name'])
+                            assigned = True
+                            break
+
+                        # normal lecture
+                        else:
+                            timetable[year][division][day][period] = {
+                                'subject': subject['name'],
+                                'teacher': teacher,
+                                'type': 'Lecture',
+                                'room': room
+                            }
+                            used_subjects_today.add(subject['name'])
+                            assigned = True
+                            break
+
+                    # if nothing assigned safely, leave free
+                    if not assigned:
+                        timetable[year][division][day][period] = {
+                            'subject': 'Free',
+                            'teacher': '-',
+                            'type': '-',
+                            'room': '-'
+                        }
+
+    return timetable
+
+
+# === RUN ===
+timetable = generate_timetable(data)
+
+# Print summary only (no full spam)
+for year in timetable:
+    print(f"\n===== {year} =====")
+    for div in timetable[year]:
+        print(f"\n{div}")
+        for day in DAYS:
+            subjects_today = [s['subject'] for s in timetable[year][div][day] if s]
+            print(f"{day}: {subjects_today}")
