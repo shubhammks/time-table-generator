@@ -1,6 +1,6 @@
 from typing import Optional, List, Any
 from pydantic import BaseModel, EmailStr
-from pydantic import ConfigDict
+from pydantic import ConfigDict, field_validator
 from enum import Enum
 
 
@@ -67,6 +67,33 @@ class RoomIn(BaseModel):
     type: RoomType = RoomType.classroom
     capacity: Optional[int] = None
 
+    @field_validator('department_id', mode='before')
+    @classmethod
+    def _dept_id_cast(cls, v):
+        if v in ("", None):
+            return None
+        try:
+            return int(v)
+        except Exception:
+            return v
+
+    @field_validator('capacity', mode='before')
+    @classmethod
+    def _capacity_cast(cls, v):
+        if v in ("", None):
+            return None
+        try:
+            return int(v)
+        except Exception:
+            return v
+
+    @field_validator('floor', mode='before')
+    @classmethod
+    def _floor_cast(cls, v):
+        if v in ("", None):
+            return None
+        return str(v)
+
 
 class RoomOut(RoomIn):
     model_config = ConfigDict(from_attributes=True)
@@ -104,6 +131,16 @@ class DivisionIn(BaseModel):
     index: int = 0
     batch_count: int = 0
 
+    @field_validator('class_id', 'index', 'batch_count', mode='before')
+    @classmethod
+    def _div_int_cast(cls, v):
+        if v in ("", None):
+            return 0 if v == "" else v
+        try:
+            return int(v)
+        except Exception:
+            return v
+
 
 class DivisionOut(DivisionIn):
     model_config = ConfigDict(from_attributes=True)
@@ -116,6 +153,17 @@ class SubjectIn(BaseModel):
     class_id: int
     hours_per_week: int = 0
     can_be_twice_in_day: bool = False
+
+    @field_validator('class_id', 'hours_per_week', mode='before')
+    @classmethod
+    def _int_cast(cls, v):
+        if v in ("", None):
+            # default 0 for hours_per_week; class_id must be provided by UI
+            return 0 if v == "" else v
+        try:
+            return int(v)
+        except Exception:
+            return v
 
 
 class SubjectOut(SubjectIn):
@@ -161,6 +209,16 @@ class GridOut(BaseModel):
 class BatchIn(BaseModel):
     division_id: int
     number: int
+
+    @field_validator('division_id', 'number', mode='before')
+    @classmethod
+    def _batch_int_cast(cls, v):
+        if v in ("", None):
+            return 0 if v == "" else v
+        try:
+            return int(v)
+        except Exception:
+            return v
 
 
 class BatchOut(BatchIn):
