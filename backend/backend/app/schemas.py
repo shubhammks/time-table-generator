@@ -65,6 +65,7 @@ class RoomIn(BaseModel):
     room_number: str
     floor: Optional[str] = None
     type: RoomType = RoomType.classroom
+    capacity: Optional[int] = None
 
 
 class RoomOut(RoomIn):
@@ -114,6 +115,7 @@ class SubjectIn(BaseModel):
     type: SubjectType = SubjectType.lecture
     class_id: int
     hours_per_week: int = 0
+    can_be_twice_in_day: bool = False
 
 
 class SubjectOut(SubjectIn):
@@ -154,6 +156,17 @@ class TimetableOut(BaseModel):
 class GridOut(BaseModel):
     days: List[str]
     grid: dict
+
+
+class BatchIn(BaseModel):
+    division_id: int
+    number: int
+
+
+class BatchOut(BatchIn):
+    id: int
+    class Config:
+        from_attributes = True
 
 
 class TimeConfigIn(BaseModel):

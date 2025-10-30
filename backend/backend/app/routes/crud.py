@@ -80,6 +80,28 @@ def create_room(payload: schemas.RoomIn, db: Session = Depends(get_db)):
     return room
 
 
+@router.put("/rooms/{room_id}", response_model=schemas.RoomOut)
+def update_room(room_id: int, payload: schemas.RoomIn, db: Session = Depends(get_db)):
+    room = db.query(models.Room).get(room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="Not found")
+    for k, v in payload.dict().items():
+        setattr(room, k, v)
+    db.commit()
+    db.refresh(room)
+    return room
+
+
+@router.delete("/rooms/{room_id}")
+def delete_room(room_id: int, db: Session = Depends(get_db)):
+    room = db.query(models.Room).get(room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(room)
+    db.commit()
+    return {"deleted": True}
+
+
 # Teachers
 @router.get("/teachers", response_model=List[schemas.TeacherOut])
 def list_teachers(db: Session = Depends(get_db)):
@@ -165,6 +187,42 @@ def list_divisions(class_id: Optional[int] = None, db: Session = Depends(get_db)
     return q.all()
 
 
+@router.post("/divisions", response_model=schemas.DivisionOut)
+def create_division(payload: schemas.DivisionIn, db: Session = Depends(get_db)):
+    # If index not provided, set to next available for the class
+    idx = payload.index if payload.index is not None else 0
+    if payload.index is None:
+        max_idx = db.query(models.Division).filter(models.Division.class_id == payload.class_id).order_by(models.Division.index.desc()).first()
+        idx = (max_idx.index + 1) if max_idx else 0
+    d = models.Division(name=payload.name, class_id=payload.class_id, index=idx, batch_count=payload.batch_count)
+    db.add(d)
+    db.commit()
+    db.refresh(d)
+    return d
+
+
+@router.put("/divisions/{division_id}", response_model=schemas.DivisionOut)
+def update_division(division_id: int, payload: schemas.DivisionIn, db: Session = Depends(get_db)):
+    d = db.query(models.Division).get(division_id)
+    if not d:
+        raise HTTPException(status_code=404, detail="Not found")
+    for k, v in payload.dict().items():
+        setattr(d, k, v)
+    db.commit()
+    db.refresh(d)
+    return d
+
+
+@router.delete("/divisions/{division_id}")
+def delete_division(division_id: int, db: Session = Depends(get_db)):
+    d = db.query(models.Division).get(division_id)
+    if not d:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(d)
+    db.commit()
+    return {"deleted": True}
+
+
 @router.get("/divisions/{division_id}/timetable")
 def division_timetable(division_id: int, db: Session = Depends(get_db)):
     entries = db.query(models.TimetableEntry).filter(models.TimetableEntry.division_id == division_id).all()
@@ -192,6 +250,76 @@ def create_subject(payload: schemas.SubjectIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(s)
     return s
+
+
+@router.put("/subjects/{subject_id}", response_model=schemas.SubjectOut)
+def update_subject(subject_id: int, payload: schemas.SubjectIn, db: Session = Depends(get_db)):
+    s = db.query(models.Subject).get(subject_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Not found")
+    for k, v in payload.dict().items():
+        setattr(s, k, v)
+    db.commit()
+    db.refresh(s)
+    return s
+
+
+@router.delete("/subjects/{subject_id}")
+def delete_subject(subject_id: int, db: Session = Depends(get_db)):
+    s = db.query(models.Subject).get(subject_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(s)
+    db.commit()
+    return {"deleted": True}
+
+
+# Batches
+@router.get("/batches", response_model=List[schemas.BatchOut])
+def list_batches(db: Session = Depends(get_db), division_id: Optional[int] = None):
+    q = db.query(models.Batch)
+    if division_id:
+        q = q.filter(models.Batch.division_id == division_id)
+    return q.all()
+
+
+@router.post("/batches", response_model=schemas.BatchOut)
+def create_batch(payload: schemas.BatchIn, db: Session = Depends(get_db)):
+    b = models.Batch(**payload.dict())
+    db.add(b)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Duplicate batch number for division")
+    db.refresh(b)
+    return b
+
+
+@router.put("/batches/{batch_id}", response_model=schemas.BatchOut)
+def update_batch(batch_id: int, payload: schemas.BatchIn, db: Session = Depends(get_db)):
+    b = db.query(models.Batch).get(batch_id)
+    if not b:
+        raise HTTPException(status_code=404, detail="Not found")
+    for k, v in payload.dict().items():
+        setattr(b, k, v)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Duplicate batch number for division")
+    db.refresh(b)
+    return b
+
+
+@router.delete("/batches/{batch_id}")
+def delete_batch(batch_id: int, db: Session = Depends(get_db)):
+    b = db.query(models.Batch).get(batch_id)
+    if not b:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(b)
+    db.commit()
+    return {"deleted": True}
 
 
 # Subject-Teacher assignments

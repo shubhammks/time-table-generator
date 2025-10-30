@@ -48,6 +48,7 @@ class Room(Base):
     room_number = Column(String(50), nullable=False)
     floor = Column(String(10), nullable=True)  # e.g., D3, 2, etc.
     type = Column(Enum(RoomType), default=RoomType.classroom, nullable=False)
+    capacity = Column(Integer, nullable=True)
     __table_args__ = (UniqueConstraint("department_id", "room_number", name="uq_room_per_dept"),)
 
 
@@ -87,6 +88,7 @@ class Subject(Base):
     type = Column(Enum(SubjectType), default=SubjectType.lecture, nullable=False)
     class_id = Column(Integer, ForeignKey("classes.id"), nullable=False)
     hours_per_week = Column(Integer, default=0)
+    can_be_twice_in_day = Column(Boolean, default=False)
 
 
 class SubjectTeacher(Base):
@@ -107,6 +109,14 @@ class Timetable(Base):
     mode = Column(Enum(ModeType), nullable=False)
     published = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Batch(Base):
+    __tablename__ = "batches"
+    id = Column(Integer, primary_key=True)
+    division_id = Column(Integer, ForeignKey("divisions.id"), nullable=False)
+    number = Column(Integer, nullable=False)  # 1..n
+    __table_args__ = (UniqueConstraint("division_id", "number", name="uq_batch_per_division"),)
 
 
 class TimetableEntry(Base):
