@@ -131,6 +131,31 @@ def create_class(payload: schemas.ClassIn, db: Session = Depends(get_db)):
     return c
 
 
+@router.put("/classes/{class_id}", response_model=schemas.ClassOut)
+def update_class(class_id: int, payload: schemas.ClassIn, db: Session = Depends(get_db)):
+    c = db.query(models.ClassGroup).get(class_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Not found")
+    # update simple fields
+    for k, v in payload.dict().items():
+        setattr(c, k, v)
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@router.delete("/classes/{class_id}")
+def delete_class(class_id: int, db: Session = Depends(get_db)):
+    c = db.query(models.ClassGroup).get(class_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Not found")
+    # also delete divisions for this class
+    db.query(models.Division).filter(models.Division.class_id == c.id).delete()
+    db.delete(c)
+    db.commit()
+    return {"deleted": True}
+
+
 # Divisions
 @router.get("/divisions", response_model=List[schemas.DivisionOut])
 def list_divisions(class_id: Optional[int] = None, db: Session = Depends(get_db)):

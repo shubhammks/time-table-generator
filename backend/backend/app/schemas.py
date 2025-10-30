@@ -86,7 +86,7 @@ class TeacherOut(TeacherIn):
 
 class ClassIn(BaseModel):
     name: str
-    mode: ModeType
+    mode: ModeType = ModeType.school
     department_id: Optional[int] = None
     number_of_divisions: int = 1
     fixed_room_id: Optional[int] = None
