@@ -22,3 +22,18 @@ def get_db():
 def init_db():
     from . import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    # Lightweight SQLite migrations for newly added columns
+    if engine.dialect.name == "sqlite":
+        with engine.connect() as conn:
+            # rooms.capacity
+            cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info('rooms')").fetchall()]
+            if "capacity" not in cols:
+                conn.exec_driver_sql("ALTER TABLE rooms ADD COLUMN capacity INTEGER")
+            # subjects.can_be_twice_in_day
+            cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info('subjects')").fetchall()]
+            if "can_be_twice_in_day" not in cols:
+                conn.exec_driver_sql("ALTER TABLE subjects ADD COLUMN can_be_twice_in_day BOOLEAN DEFAULT 0")
+            # batches table
+            tables = [row[0] for row in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            if "batches" not in tables:
+                Base.metadata.create_all(bind=engine)  # ensure Batch is created
