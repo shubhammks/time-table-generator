@@ -10,6 +10,18 @@ export const timetableService = {
       throw error.response?.data || error.message;
     }
   },
+  async list() {
+    const res = await api.get('/timetable/list');
+    return res.data;
+  },
+  async grid(ttId) {
+    const res = await api.get(`/timetable/${ttId}/grid`);
+    return res.data;
+  },
+  async editSlot(ttId, payload) {
+    const res = await api.post(`/timetable/${ttId}/edit/slot`, payload);
+    return res.data;
+  },
 };
 
 export const dataService = {

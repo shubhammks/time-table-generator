@@ -39,6 +39,7 @@ const Layout = () => {
     { name: 'Batches', href: '/batches', icon: UsersIcon },
     { name: 'Rooms', href: '/rooms', icon: BuildingOffice2Icon },
     { name: 'View Timetables', href: '/view-timetables', icon: CalendarDaysIcon },
+    { name: 'Edit Timetable', href: '/edit-timetable', icon: TableCellsIcon },
   ];
 
   // Add admin-only routes

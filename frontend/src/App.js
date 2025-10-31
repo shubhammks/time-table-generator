@@ -29,6 +29,7 @@ import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import GenerateWizard from "./pages/GenerateWizard";
+const EditTimetable = React.lazy(() => import('./pages/EditTimetable'));
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -65,7 +66,10 @@ function App() {
                       <Route path="teachers" element={<Teachers />} />
                       <Route path="rooms" element={<Rooms />} />
                       <Route path="generate" element={<GenerateWizard />} />
-                      <Route path="view-timetables" element={<ViewTimetables />} />
+                    <Route path="view-timetables" element={<ViewTimetables />} />
+                      <Route path="edit-timetable" element={<React.Suspense fallback={null}>
+                        <EditTimetable />
+                      </React.Suspense>} />
                       <Route path="users" element={<Users />} />
                       <Route path="profile" element={<Profile />} />
                       <Route path="settings" element={<Settings />} />
