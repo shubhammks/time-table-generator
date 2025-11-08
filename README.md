@@ -1,3 +1,34 @@
+1. Give me project structure
+2. According to my project structure and requirements used in project , give me versions of requirements to use
+You
+11:17 PM
+3. give me docker-compose file with code for this project and also DockerFile in backend and frontend directory code so that i can deploy project smoothlyj on aws
+4. Which services on aws should i use to deploy the project
+You
+11:21 PM
+5. Give me series of commands step by step to deploy this project with the guide of each command and verification and expected result in each step
+Shubham Shinde (Shub's)
+11:25 PM
+fastapi
+uvicorn
+sqlalchemy
+mysql-connector-python
+python-multipart
+pydantic
+bcrypt==4.0.1
+passlib
+pydantic[email]
+python-jose[cryptography]
+python-dotenv
+Shubham Shinde (Shub's)
+11:32 PM
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+Shubham Shinde (Shub's)
+11:35 PM
+git add .
+git commit -m ""
+git push origin main
+
 # Smart Timetable Generator – Setup and Run Guide
 
 This repository contains a React frontend and a FastAPI backend for generating school/college timetables with constraints.
